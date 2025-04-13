@@ -1,36 +1,32 @@
-# Radially Symmetrical Gyroid Generator
+# PyRoid - Radially Symmetrical Gyroid Generator
 
-## 🚧 Work in Progress 🚧
+A powerful application for generating, visualizing, and exporting customizable radially symmetrical gyroid structures for 3D printing and modeling.
 
-This project is currently under active development. Features and functionality may change, and there might be bugs or incomplete aspects.
+## Features
 
-
-## Description
-
-The Radially Symmetrical Gyroid Generator is a Python-based application that allows users to create and visualize customizable gyroid structures. It provides a graphical user interface for adjusting various parameters to generate unique, radially symmetrical gyroid models.
-<img width="731" alt="image" src="https://github.com/user-attachments/assets/741ab68a-3688-4f59-9f43-9f8c42e98ab8">
-
-## Current Features
-
-- Interactive GUI for parameter input
-- Real-time 3D visualization of the generated gyroid
-- Customizable gyroid properties (dimensions, cell sizes, wall thickness, etc.)
-- Dual-color visualization
-- STL/OBJ export functionality for 3D printing
+- **Interactive GUI**: Intuitive graphical interface for real-time parameter adjustment and visualization
+- **Command Line Interface**: Generate gyroids programmatically or in scripts
+- **Parameter Presets**: Save and load parameter configurations for reproducible designs
+- **Export Options**: Export models as STL or OBJ files for 3D printing or further modeling
+- **Customizable Parameters**: Fine-tune every aspect of the gyroid structure
+- **Mesh Statistics**: View detailed statistics about your generated mesh
 
 ## Installation
 
 ### Prerequisites
 
 - Python 3.7+
-- PyQt5
-- PyVista
-- NumPy
-- trimesh
+- Required Python packages (installed automatically):
+  - numpy
+  - pyvista
+  - trimesh
+  - PyQt5
+  - pyvistaqt
+  - QDarkStyle
 
-### Steps
+### Installation Steps
 
-1. Clone this repository:
+1. Clone the repository:
    ```
    git clone https://github.com/tazomatalax/pyroid.git
    ```
@@ -45,6 +41,7 @@ The Radially Symmetrical Gyroid Generator is a Python-based application that all
    ```
    cd pyroid
    ```
+
 4. Create Virtual Environment (optional but reccomended):
    ```
    python -m venv venv
@@ -61,51 +58,45 @@ The Radially Symmetrical Gyroid Generator is a Python-based application that all
    ```
    pip install -r requirements.txt
    ```
-   OR
-   ```
-   pip install numpy pyvista trimesh PyQt5 pyvistaqt
-   ```
-
-
-
-
 
 ## Usage
 
-1. Navigate to the project directory:
-   ```
-   cd pyroid
-   ```
+### Graphical User Interface
 
-2. Create a Virtual Environment (optional but recommended):
-   ```
-   python -m venv venv
-   ```
-   
-   And activate it:
-   - On Windows:
-     ```
-     venv\Scripts\activate
-     ```
-   - On macOS and Linux:
-     ```
-     source venv/bin/activate
-     ```
+Run the GUI with:
 
-3. Install the required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+```
+python main.py
+```
 
-4. Navigate to the `gygui` folder:
-   ```
-   cd gygui
-   ```
 
-5. Run the application by executing:
-   ```
-   python main.py
-   ```
+### Command Line Interface
+
+Generate a gyroid from the command line:
+
+```
+python main.py --cli --output my_gyroid.stl
+```
+
+
+## Parameters Explained
+
+- **Resolution**: Higher values create more detailed structures but increase computation time
+- **X/Y/Z-axis Length**: Dimensions of the gyroid structure
+- **Inner Radius**: Size of the central void
+- **Outer Radius**: Overall thickness of the structure
+- **Angular Scaling Factor**: Affects the number of twists in the structure
+- **Wall Thickness**: Thickness of the gyroid walls
+- **Cell Radius/Height**: Affects the size and spacing of the gyroid's features
+
+## Example Presets
+
+- **Default**: Balanced parameters for general purpose use
+- **Fine Detail**: Higher resolution and smaller cells for more intricate designs
+- **Thick Walls**: Sturdier structure with thicker walls for easier printing
+- **Dense Pattern**: More tightly packed patterns for a denser structure
+
+## Prepping the model for Printing
 
 Use the GUI to adjust parameters and generate your custom gyroid structure. Click "Generate Gyroid" to create the model and "Save STL" to export it.
 
@@ -127,29 +118,13 @@ After export, the walls of the inner structure may need thickening. This can be 
 
 <img width="1280" alt="image" src="https://github.com/user-attachments/assets/dd770983-72bc-4c1c-b885-cee5cee44684">
 
+### Project Structure
 
-## Known Issues
-
-- Performance may degrade with very high resolution settings
-- Some parameter combinations may produce unexpected results
-
-## Planned Features
-
-- [ ] Improved error handling and user feedback
-- [ ] Additional gyroid types and variations
-- [ ] Performance optimizations for handling higher resolutions
-- [ ] More export options (e.g., OBJ, STEP formats)
-- [ ] Undo/Redo functionality
-- [ ] Importing .STL or other bodies to use as an implicit body to apply gyroid latticing
-
-## Contributing
-
-As this project is still in development, contributions are welcome! Please feel free to submit issues or pull requests.
+- `pyroid/core.py`: Core gyroid generation logic
+- `pyroid/gui.py`: Graphical user interface
+- `pyroid/cli.py`: Command line interface
+- `tests/`: Test suite
 
 ## License
 
-[MIT License](LICENSE)
-
-## Disclaimer
-
-This software is provided "as is", without warranty of any kind. Use at your own risk.
+This project is licensed under the MIT License - see the LICENSE file for details.
