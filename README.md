@@ -33,7 +33,7 @@ A powerful application for generating, visualizing, and exporting customizable r
    NOTE: If you dont have "git" installed in windows, do that first. Otherwise, skip this step and just [download the repo as a .zip](https://github.com/tazomatalax/pyroid/archive/refs/heads/main.zip).
    Save file to Downloads, and extract to Downloads, then open cmd.exe and type:
    ```
-   cd Downloads\pyroid-main\pyroid-main
+   cd Downloads\pyroid
    ```
    Skip to step 3.
     
