@@ -1,130 +1,106 @@
-# PyRoid - Radially Symmetrical Gyroid Generator
+# PyRoid - Radially Symmetrical Gyroid Generator & STL Infill Tool
 
-A powerful application for generating, visualizing, and exporting customizable radially symmetrical gyroid structures for 3D printing and modeling.
+A powerful, high-performance Python application and library for generating, visualizing, and exporting customizable radially symmetrical gyroid structures and converting arbitrary 3D STL volumes into gyroid lattices for 3D printing and industrial design.
+
+![PyRoid GUI](https://github.com/user-attachments/assets/64ee483d-05cf-4275-b4be-437bbdcf94c6)
 
 ## Features
 
-- **Interactive GUI**: Intuitive graphical interface for real-time parameter adjustment and visualization
-- **Command Line Interface**: Generate gyroids programmatically or in scripts
-- **Parameter Presets**: Save and load parameter configurations for reproducible designs
-- **Export Options**: Export models as STL or OBJ files for 3D printing or further modeling
-- **Customizable Parameters**: Fine-tune every aspect of the gyroid structure
-- **Mesh Statistics**: View detailed statistics about your generated mesh
+- **Interactive GUI**: Intuitive dual-mode graphical interface (Parametric Gyroid & STL Volume Infill) with real-time PyVista 3D viewport.
+- **STL Volume Gyroidization**: Import any closed 3D STL model and convert its internal volume into a porous gyroid lattice structure.
+- **Command Line Interface (`pyroid-cli`)**: Scriptable CLI supporting parametric generation, STL conversion, preset loading, offscreen rendering, and mesh stats.
+- **Powered by `uv`**: Ultra-fast dependency resolution, environment isolation, and project execution using `uv`.
+- **Type-Safe Data Models**: Powered by strongly-typed `GyroidParams` and `STLConversionParams` dataclasses.
+- **Automated Mesh Repair**: Watertight validation, hole filling, and optional planar surface trimming/capping ready for direct slicing and 3D printing.
+- **Export Options**: Export high-quality STL or OBJ meshes.
 
-## Installation
+---
+
+## Installation & Setup (with `uv`)
 
 ### Prerequisites
 
-- Python 3.7+
-- Required Python packages (installed automatically):
-  - numpy
-  - pyvista
-  - trimesh
-  - PyQt5
-  - pyvistaqt
-  - QDarkStyle
+- [uv](https://github.com/astral-sh/uv) (install via `pip install uv` or `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`)
 
-### Installation Steps
+### Setup Environment
 
-1. Clone the repository:
-   ```
+1. **Clone the repository**:
+   ```bash
    git clone https://github.com/tazomatalax/pyroid.git
-   ```
-   NOTE: If you dont have "git" installed in windows, do that first. Otherwise, skip this step and just [download the repo as a .zip](https://github.com/tazomatalax/pyroid/archive/refs/heads/main.zip).
-   Save file to Downloads, and extract to Downloads, then open cmd.exe and type:
-   ```
-   cd Downloads\pyroid
-   ```
-   Skip to step 3.
-    
-3. Navigate to the project directory:
-   ```
    cd pyroid
    ```
 
-4. Create Virtual Environment (optional but reccomended):
+2. **Sync Virtual Environment**:
+   ```bash
+   uv venv
+   uv sync --all-extras
    ```
-   python -m venv venv
-   ```
-   And activate it with (Windows):
-   ```
-   venv\Scripts\activate
-   ```
-   On Linux use:
-   ```
-   source venv/bin/activate
-   ```
-6. Install the required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+
+---
 
 ## Usage
 
-### Graphical User Interface
+### Graphical User Interface (GUI)
 
-Run the GUI with:
+Launch the dual-tab GUI using `uv`:
 
-```
-python main.py
-```
-
-
-### Command Line Interface
-
-Generate a gyroid from the command line:
-
-```
-python main.py --cli --output my_gyroid.stl
+```bash
+uv run main.py
+# Or using entry point:
+uv run pyroid
 ```
 
+- **Tab 1 (Parametric Gyroid)**: Adjust dimensions ($a, b, c$), inner/outer radii, wall thickness, cell scaling, and preset configurations.
+- **Tab 2 (STL to Gyroid Volume)**: Select an external STL file, configure unit cell pitch (mm) and wall thickness, and convert its volume into a gyroid lattice structure.
 
-## Parameters Explained
+### Command Line Interface (CLI)
 
-- **Resolution**: Higher values create more detailed structures but increase computation time
-- **X/Y/Z-axis Length**: Dimensions of the gyroid structure
-- **Inner Radius**: Size of the central void
-- **Outer Radius**: Overall thickness of the structure
-- **Angular Scaling Factor**: Affects the number of twists in the structure
-- **Wall Thickness**: Thickness of the gyroid walls
-- **Cell Radius/Height**: Affects the size and spacing of the gyroid's features
+#### 1. Generate Parametric Gyroid
+```bash
+uv run pyroid-cli --output my_gyroid.stl --preset thick_walls --res 100
+```
 
-## Example Presets
+#### 2. Convert 3D STL Model Volume into a Gyroid Structure
+```bash
+uv run pyroid-cli --input-stl model.stl --output gyroid_model.stl --cell-size 5.0 --wall-thickness 0.5
+```
 
-- **Default**: Balanced parameters for general purpose use
-- **Fine Detail**: Higher resolution and smaller cells for more intricate designs
-- **Thick Walls**: Sturdier structure with thicker walls for easier printing
-- **Dense Pattern**: More tightly packed patterns for a denser structure
+#### 3. Offscreen Thumbnail Rendering & Stats
+```bash
+uv run pyroid-cli --input-stl input.stl --output out.stl --render screenshot.png --print-stats
+```
 
-## Prepping the model for Printing
+---
 
-Use the GUI to adjust parameters and generate your custom gyroid structure. Click "Generate Gyroid" to create the model and "Save STL" to export it.
+## Technical Architecture
 
-Note: If you encounter any issues with PyVista, ensure that you have a compatible graphics driver installed and updated.
+```gfm
+pyroid/
+├── pyroid/
+│   ├── core.py         # Main GyroidGenerator class & math pipeline
+│   ├── models.py       # GyroidParams & STLConversionParams dataclasses
+│   ├── mesh_utils.py   # STL loading, volumetric ray containment, watertight repair
+│   ├── cli.py          # Command Line Interface (pyroid-cli)
+│   └── gui.py          # PyQt5 dual-mode GUI & PyVistaQt interactor
+├── tests/              # Automated pytest test suite
+├── AGENTS.md           # Developer & AI Agent contribution guide
+├── pyproject.toml      # Modern PEP 621 package metadata & uv overrides
+├── uv.lock             # Deterministic uv lockfile
+└── main.py             # Entry point launcher
+```
 
-After export, the walls of the inner structure may need thickening. This can be accomplished using Blender:
+---
 
-1. Open Blender and delete the default cube.
-2. File > Import > STL (.stl)
-3. Apply wireframe to better visualize the mesh.
-4. Apply a Solidify modifier, with 0 offset, to a thickness of your choice to the model.
-5. Apply a Remesh modifier to smooth things out.
-6. File > Export > STL (.stl)
-   
-<img width="1918" alt="image" src="https://github.com/user-attachments/assets/64ee483d-05cf-4275-b4be-437bbdcf94c6">
+## Running Tests
 
-7. I found that I needed to "Cut" the model at the top (save bottom object), and the bottom (save top object) in order to have flat surfaces to print
-8. Slice and print!
+Run the test suite using `uv`:
 
-<img width="1280" alt="image" src="https://github.com/user-attachments/assets/dd770983-72bc-4c1c-b885-cee5cee44684">
+```bash
+uv run pytest -v
+```
 
-### Project Structure
-
-- `pyroid/core.py`: Core gyroid generation logic
-- `pyroid/gui.py`: Graphical user interface
-- `pyroid/cli.py`: Command line interface
-- `tests/`: Test suite
+---
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Licensed under the MIT License - see [LICENSE](LICENSE) for details.

@@ -1,136 +1,139 @@
 import numpy as np
 import pyvista as pv
 import trimesh
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, Union
+
+from pyroid.models import GyroidParams, STLConversionParams
+from pyroid.mesh_utils import load_stl, convert_stl_to_gyroid, prepare_for_printing, render_offscreen
 
 
 class GyroidGenerator:
-    """Core class for generating gyroid structures with various parameters."""
+    """Core class for generating parametric gyroid structures and converting STL meshes."""
     
-    DEFAULT_PARAMS = {
-        'res': 80,
-        'a': 24,
-        'b': 24,
-        'c': 10,
-        'r1': 12,
-        'r2': 0,
-        'phi_scale': 8,
-        'wall_thickness': 11.5,
-        'cell_radius': 2,
-        'cell_height': 3
-    }
-    
-    def __init__(self, params: Optional[Dict[str, float]] = None):
+    DEFAULT_PARAMS = GyroidParams().to_dict()
+
+    def __init__(self, params: Optional[Union[GyroidParams, Dict[str, Any]]] = None):
         """
         Initialize the gyroid generator with parameters.
         
         Args:
-            params: Dictionary of parameters to override defaults
+            params: GyroidParams instance or dictionary of parameter overrides.
         """
-        self.params = self.DEFAULT_PARAMS.copy()
-        if params:
-            self.params.update(params)
-        self.mesh = None
-        
+        if isinstance(params, GyroidParams):
+            self.params = params
+        elif isinstance(params, dict):
+            self.params = GyroidParams.from_dict(params)
+        else:
+            self.params = GyroidParams()
+
+        self.mesh: Optional[pv.PolyData] = None
+
     def validate_params(self) -> Tuple[bool, str]:
-        """
-        Validate parameters to ensure they have appropriate values.
-        
-        Returns:
-            Tuple of (is_valid, error_message)
-        """
-        try:
-            # Ensure res is a positive integer
-            if not isinstance(self.params['res'], int) or self.params['res'] <= 0:
-                return False, "Resolution must be a positive integer"
-                
-            # Ensure dimensions are positive
-            for dim in ['a', 'b', 'c']:
-                if self.params[dim] <= 0:
-                    return False, f"Dimension {dim} must be positive"
-                    
-            # Ensure radiuses make sense
-            if self.params['r1'] < 0:
-                return False, "Inner radius must be non-negative"
-            
-            if self.params['wall_thickness'] <= 0:
-                return False, "Wall thickness must be positive"
-                
-            # All checks passed
-            return True, ""
-            
-        except KeyError as e:
-            return False, f"Missing parameter: {str(e)}"
-        except Exception as e:
-            return False, f"Parameter validation failed: {str(e)}"
-    
+        """Validate parameters using the GyroidParams data model."""
+        return self.params.validate()
+
     def generate(self) -> pv.PolyData:
         """
-        Generate the gyroid mesh using the configured parameters.
+        Generate the radially symmetrical gyroid mesh using current parameters.
         
         Returns:
-            The generated mesh as a PyVista PolyData object
-        
+            PyVista PolyData mesh object.
+            
         Raises:
-            ValueError: If parameters are invalid
+            ValueError: If parameters are invalid.
         """
-        # Validate parameters
         is_valid, error = self.validate_params()
         if not is_valid:
             raise ValueError(error)
+
+        p = self.params
+        res = int(p.res)
+
+        # Generate cylindrical/radial grid domain
+        kx, ky, kz = [2.0 * np.pi / getattr(p, dim) for dim in ('a', 'b', 'c')]
+        r_aux, phi, z = np.mgrid[
+            0:p.a:res * 1j, 
+            0:p.b:res * 1j, 
+            0:p.c:res * 1j
+        ]
+
+        r = (p.r2 - p.r1) / p.a * r_aux + p.r1
+
+        # Calculate radial gyroid function values
+        scale_x = 2.0 * np.pi * p.cell_radius / p.a
+        scale_y = 2.0 * np.pi * p.cell_radius / p.b
+        scale_z = 2.0 * np.pi * p.cell_height / p.c
         
-        # Extract parameters for easier reference
-        params = self.params
-        
-        # Generate gyroid
-        kx, ky, kz = [2 * np.pi / params[p] for p in ('a', 'b', 'c')]
-        r_aux, phi, z = np.mgrid[0:params['a']:int(params['res']) * 1j, 
-                                 0:params['b']:int(params['res']) * 1j, 
-                                 0:params['c']:int(params['res']) * 1j]
+        phi_scaled = phi * p.phi_scale
+        fun_values = (
+            np.cos(r_aux * scale_x) * np.sin(phi_scaled * scale_y) +
+            np.cos(phi_scaled * scale_y) * np.sin(z * scale_z) +
+            np.cos(z * scale_z) * np.sin(r_aux * scale_x)
+        )
 
-        r = (params['r2'] - params['r1']) / params['a'] * r_aux + params['r1']
+        # Apply radial mask
+        mask = (r >= (p.r1 - p.wall_thickness)) & (r <= p.r1)
+        fun_values[~mask] = 1.0
 
-        # Calculate gyroid function values
-        scale_x = 2 * np.pi * params['cell_radius'] / params['a']
-        scale_y = 2 * np.pi * params['cell_radius'] / params['b']
-        scale_z = 2 * np.pi * params['cell_height'] / params['c']
-        
-        fun_values = (np.cos(r_aux * scale_x) * np.sin(phi * params['phi_scale'] * scale_y) + 
-                     np.cos(phi * params['phi_scale'] * scale_y) * np.sin(z * scale_z) + 
-                     np.cos(z * scale_z) * np.sin(r_aux * scale_x))
-
-        # Apply mask
-        mask = (r >= (params['r1'] - params['wall_thickness'])) & (r <= params['r1'])
-        fun_values[~mask] = 1
-
-        # Convert to cartesian coordinates
+        # Convert coordinates to Cartesian
         x = r * np.cos(phi * ky)
         y = r * np.sin(phi * ky)
         
-        # Create grid and extract isosurface
+        # Build PyVista StructuredGrid and extract isosurface
         grid = pv.StructuredGrid(x, y, z)
         grid["vol"] = fun_values.ravel('F')
         self.mesh = grid.contour([0])
         
         return self.mesh
-    
-    def save_stl(self, filename: str) -> None:
+
+    def convert_from_stl(self, stl_params: STLConversionParams) -> pv.PolyData:
+        """
+        Import an STL file and convert its 3D volume into a gyroid lattice.
+        
+        Args:
+            stl_params: STLConversionParams configuration object.
+            
+        Returns:
+            PyVista PolyData mesh of the gyroidized STL volume.
+        """
+        is_valid, err = stl_params.validate()
+        if not is_valid:
+            raise ValueError(err)
+
+        tri_mesh, _ = load_stl(stl_params.stl_path)
+        self.mesh = convert_stl_to_gyroid(tri_mesh, stl_params)
+        return self.mesh
+
+    def save_stl(self, filename: str, prepare_manifold: bool = False) -> None:
         """Save the generated mesh as an STL file."""
         if self.mesh is None:
             raise ValueError("No mesh has been generated yet")
-        self.mesh.save(filename)
-    
+            
+        if prepare_manifold:
+            tri = prepare_for_printing(self.mesh)
+            tri.export(filename)
+        else:
+            self.mesh.save(filename)
+
     def save_obj(self, filename: str) -> None:
         """Save the generated mesh as an OBJ file."""
         if self.mesh is None:
             raise ValueError("No mesh has been generated yet")
-        # Convert PyVista mesh to Trimesh format
-        mesh = trimesh.Trimesh(vertices=self.mesh.points, 
-                              faces=self.mesh.faces.reshape((-1, 4))[:, 1:])
-        mesh.export(filename)
-    
+            
+        tri = trimesh.Trimesh(
+            vertices=self.mesh.points, 
+            faces=self.mesh.faces.reshape((-1, 4))[:, 1:]
+        )
+        tri.export(filename)
+
+    def save_screenshot(self, filename: str) -> None:
+        """Save a rendered PNG thumbnail of the mesh."""
+        if self.mesh is None:
+            raise ValueError("No mesh has been generated yet")
+        render_offscreen(self.mesh, filename)
+
     def get_mesh_stats(self) -> Dict[str, Any]:
-        """Return statistics about the generated mesh."""
+        """Return quantitative mesh metrics."""
         if self.mesh is None:
             raise ValueError("No mesh has been generated yet")
         
@@ -141,25 +144,25 @@ class GyroidGenerator:
             "surface_area": self.mesh.area,
             "has_normals": self.mesh.face_normals is not None,
         }
-    
+
     @classmethod
     def get_param_descriptions(cls) -> Dict[str, str]:
-        """Return descriptions of each parameter."""
+        """Return parameter descriptions."""
         return {
-            'res': 'Resolution of the grid in each dimension. Higher values create more detailed structures but increase computation time.',
-            'a': 'Dimension length along the X-axis. Affects the overall width of the gyroid.',
-            'b': 'Dimension length along the Y-axis. Affects the overall depth of the gyroid.',
-            'c': 'Dimension length along the Z-axis. Affects the overall height of the gyroid.',
-            'r1': 'Inner radius of the gyroid structure. Determines the size of the central void.',
-            'r2': 'Outer radius of the gyroid structure. Determines the overall thickness of the structure.',
-            'phi_scale': 'Scaling factor for the angular coordinate. Affects the number of twists in the structure.',
-            'wall_thickness': 'Thickness of the gyroid walls. Higher values create thicker, more robust structures.',
-            'cell_radius': 'Radius of the cells in the gyroid structure. Affects the size of individual "pores" in the structure.',
-            'cell_height': 'Height of the cells in the gyroid structure. Affects the vertical spacing of features.'
+            'res': 'Resolution of the grid in each dimension.',
+            'a': 'Dimension length along X-axis.',
+            'b': 'Dimension length along Y-axis.',
+            'c': 'Dimension length along Z-axis.',
+            'r1': 'Inner radius of gyroid structure (central void).',
+            'r2': 'Outer radius of gyroid structure.',
+            'phi_scale': 'Angular scaling factor (twists).',
+            'wall_thickness': 'Wall thickness of gyroid.',
+            'cell_radius': 'Cell pore radius.',
+            'cell_height': 'Cell vertical height.'
         }
-    
+
     @classmethod
-    def get_presets(cls) -> Dict[str, Dict[str, float]]:
+    def get_presets(cls) -> Dict[str, Dict[str, Any]]:
         """Return predefined parameter presets."""
         return {
             "default": cls.DEFAULT_PARAMS,

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyroid"
+version = "1.1.0"
+description = "Radially Symmetrical Gyroid Generator & STL Volume Infill Tool"
+readme = "README.md"
+authors = [
+    { name = "PyRoid Team" }
+]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+    "pyvista>=0.43.0",
+    "trimesh[easy]>=4.0.0",
+    "rtree>=1.0.0",
+    "networkx>=3.0",
+    "PyQt5>=5.15.0,<5.15.11",
+    "pyvistaqt>=0.11.0",
+    "QDarkStyle>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+pyroid = "pyroid.main:main"
+pyroid-cli = "pyroid.cli:main"
+
+[tool.uv]
+override-dependencies = [
+    "pyqt5-qt5==5.15.2"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
