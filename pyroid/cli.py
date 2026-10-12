@@ -28,6 +28,10 @@ def parse_args():
                            help="Gyroid unit cell size (mm or model units) for STL conversion")
     stl_group.add_argument("--flat-cap", action="store_true", default=True,
                            help="Planar slice and cap surface ends for 3D printing")
+    stl_group.add_argument("--preserve-shell", action="store_true", default=False,
+                           help="Preserve outer boundary of input STL as a solid shell")
+    stl_group.add_argument("--shell-thickness", type=float, default=1.0,
+                           help="Outer shell thickness (mm or model units) when --preserve-shell is enabled")
 
     # Parametric Gyroid Group
     param_group = parser.add_argument_group("Parametric Gyroid Parameters")
@@ -85,7 +89,9 @@ def main():
                 resolution=args.res,
                 cell_size=args.cell_size,
                 wall_thickness=args.wall_thickness,
-                flat_cap=args.flat_cap
+                flat_cap=args.flat_cap,
+                preserve_shell=args.preserve_shell,
+                shell_thickness=args.shell_thickness
             )
             print("Converting STL volume to Gyroid lattice...")
             generator.convert_from_stl(stl_params)

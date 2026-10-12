@@ -207,6 +207,21 @@ class GyroidGeneratorGUI(QMainWindow):
         self.stl_cap_check.setChecked(True)
         stl_params_layout.addWidget(self.stl_cap_check)
 
+        # Preserve Shell
+        self.stl_shell_check = QCheckBox("Preserve original STL outer shell")
+        self.stl_shell_check.setChecked(False)
+        self.stl_shell_check.toggled.connect(self.on_shell_check_toggled)
+        stl_params_layout.addWidget(self.stl_shell_check)
+
+        shell_thick_row = QHBoxLayout()
+        self.stl_shell_label = QLabel("Shell Thickness (mm):")
+        self.stl_shell_edit = QLineEdit("1.0")
+        self.stl_shell_label.setEnabled(False)
+        self.stl_shell_edit.setEnabled(False)
+        shell_thick_row.addWidget(self.stl_shell_label)
+        shell_thick_row.addWidget(self.stl_shell_edit)
+        stl_params_layout.addLayout(shell_thick_row)
+
         stl_tab_layout.addWidget(stl_params_box)
         
         self.convert_stl_btn = QPushButton("Convert STL Volume to Gyroid")
@@ -229,6 +244,15 @@ class GyroidGeneratorGUI(QMainWindow):
         actions_layout.addWidget(self.save_stl_btn)
         actions_layout.addWidget(self.save_obj_btn)
         left_layout.addWidget(actions_box)
+
+        # View Options Section
+        view_box = QGroupBox("View Options")
+        view_layout = QVBoxLayout(view_box)
+        self.cutaway_check = QCheckBox("Show Cross-Section (Cutaway)")
+        self.cutaway_check.setToolTip("Slice mesh along X-axis to inspect internal gyroid infill")
+        self.cutaway_check.toggled.connect(self.on_view_mode_changed)
+        view_layout.addWidget(self.cutaway_check)
+        left_layout.addWidget(view_box)
         
         # Stats section
         self.stats_box = QGroupBox("Mesh Statistics")
@@ -341,13 +365,17 @@ class GyroidGeneratorGUI(QMainWindow):
             cell_size = float(self.stl_cell_edit.text())
             wall_thick = float(self.stl_wall_edit.text())
             flat_cap = self.stl_cap_check.isChecked()
+            preserve_shell = self.stl_shell_check.isChecked()
+            shell_thick = float(self.stl_shell_edit.text()) if preserve_shell else 1.0
 
             stl_params = STLConversionParams(
                 stl_path=stl_path,
                 resolution=res,
                 cell_size=cell_size,
                 wall_thickness=wall_thick,
-                flat_cap=flat_cap
+                flat_cap=flat_cap,
+                preserve_shell=preserve_shell,
+                shell_thickness=shell_thick
             )
             
             self.convert_stl_btn.setEnabled(False)
@@ -362,16 +390,26 @@ class GyroidGeneratorGUI(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Invalid parameters: {str(e)}")
 
-    def on_generation_finished(self, generator: GyroidGenerator):
-        self.generator = generator
-        self.statusBar.showMessage("Mesh generated successfully!")
-        self.generate_btn.setEnabled(True)
-        self.convert_stl_btn.setEnabled(True)
-        self.progressBar.setVisible(False)
-        
+    def on_shell_check_toggled(self, checked: bool):
+        self.stl_shell_label.setEnabled(checked)
+        self.stl_shell_edit.setEnabled(checked)
+
+    def on_view_mode_changed(self):
+        if self.generator and self.generator.mesh:
+            self.render_current_mesh()
+
+    def render_current_mesh(self):
         self.plotter.clear()
-        if generator.mesh is not None and generator.mesh.n_points > 0:
-            self.plotter.add_mesh(generator.mesh, scalars=generator.mesh.points[:, -1], show_scalar_bar=False)
+        if self.generator is not None and self.generator.mesh is not None and self.generator.mesh.n_points > 0:
+            mesh_to_show = self.generator.mesh
+            if self.cutaway_check.isChecked():
+                try:
+                    mesh_to_show = mesh_to_show.clip(normal='x', origin=mesh_to_show.center)
+                except Exception:
+                    mesh_to_show = self.generator.mesh
+
+            if mesh_to_show.n_points > 0:
+                self.plotter.add_mesh(mesh_to_show, scalars=mesh_to_show.points[:, -1], show_scalar_bar=False)
             self.plotter.add_bounding_box()
             self.plotter.show_axes()
             self.plotter.reset_camera()
@@ -379,6 +417,14 @@ class GyroidGeneratorGUI(QMainWindow):
             self.stats_box.setVisible(True)
         else:
             QMessageBox.warning(self, "Empty Mesh", "Generated mesh contains 0 points. Check cell size or wall thickness.")
+
+    def on_generation_finished(self, generator: GyroidGenerator):
+        self.generator = generator
+        self.statusBar.showMessage("Mesh generated successfully!")
+        self.generate_btn.setEnabled(True)
+        self.convert_stl_btn.setEnabled(True)
+        self.progressBar.setVisible(False)
+        self.render_current_mesh()
 
     def on_generation_error(self, error_msg):
         QMessageBox.critical(self, "Generation Failed", error_msg)
@@ -413,6 +459,8 @@ class GyroidGeneratorGUI(QMainWindow):
 
     def new_project(self):
         self.apply_preset("default")
+        self.stl_shell_check.setChecked(False)
+        self.cutaway_check.setChecked(False)
         self.plotter.clear()
         self.generator = None
         self.stats_box.setVisible(False)

@@ -1,7 +1,7 @@
 import pytest
 import pyvista as pv
 from pyroid.core import GyroidGenerator
-from pyroid.models import GyroidParams
+from pyroid.models import GyroidParams, STLConversionParams
 
 
 def test_gyroid_params_validation():
@@ -14,6 +14,18 @@ def test_gyroid_params_validation():
     valid, err = invalid_params.validate()
     assert not valid
     assert "Resolution" in err
+
+
+def test_stl_conversion_params_validation():
+    params = STLConversionParams(stl_path="test.stl", preserve_shell=True, shell_thickness=1.5)
+    valid, err = params.validate()
+    assert valid
+    assert err == ""
+
+    invalid_params = STLConversionParams(stl_path="test.stl", preserve_shell=True, shell_thickness=-1.0)
+    valid, err = invalid_params.validate()
+    assert not valid
+    assert "Shell thickness must be positive" in err
 
 
 def test_default_gyroid_generation():

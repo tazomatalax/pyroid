@@ -49,3 +49,34 @@ def test_cli_stl_conversion(monkeypatch):
         for p in [in_path, out_path]:
             if os.path.exists(p):
                 os.remove(p)
+
+
+def test_cli_stl_conversion_with_shell(monkeypatch):
+    cube = trimesh.creation.box(extents=[10, 10, 10])
+    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as in_tmp:
+        cube.export(in_tmp.name)
+        in_path = in_tmp.name
+
+    with tempfile.NamedTemporaryFile(suffix=".stl", delete=False) as out_tmp:
+        out_path = out_tmp.name
+
+    try:
+        test_args = [
+            "pyroid-cli",
+            "--input-stl", in_path,
+            "--output", out_path,
+            "--res", "25",
+            "--cell-size", "2.5",
+            "--preserve-shell",
+            "--shell-thickness", "1.0"
+        ]
+        monkeypatch.setattr("sys.argv", test_args)
+
+        exit_code = main()
+        assert exit_code == 0
+        assert os.path.exists(out_path)
+        assert os.path.getsize(out_path) > 0
+    finally:
+        for p in [in_path, out_path]:
+            if os.path.exists(p):
+                os.remove(p)

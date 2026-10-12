@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import scipy.ndimage as ndi
 import pyvista as pv
 import trimesh
 from typing import Tuple, Optional, Union
@@ -74,6 +75,16 @@ def convert_stl_to_gyroid(stl_mesh: trimesh.Trimesh, params: STLConversionParams
 
     # Mask out points outside the STL geometry
     inside_3d = inside_mask.reshape(x.shape)
+
+    # Preserve outer shell if configured
+    if params.preserve_shell and params.shell_thickness > 0:
+        dx = extent[0] / max(nx - 1, 1)
+        dy = extent[1] / max(ny - 1, 1)
+        dz = extent[2] / max(nz - 1, 1)
+        dist_inside = ndi.distance_transform_edt(inside_3d, sampling=(dx, dy, dz))
+        shell_mask = inside_3d & (dist_inside <= params.shell_thickness)
+        field[shell_mask] = -1.0
+
     field[~inside_3d] = 1.0  # Set outside points high so isosurface doesn't form outside boundary
 
     # Construct PyVista grid and contour isosurface at 0
@@ -92,19 +103,22 @@ def prepare_for_printing(mesh: Union[pv.PolyData, trimesh.Trimesh], flat_cap: bo
     else:
         tri = mesh.copy()
 
-    if not tri.is_watertight:
-        tri.fill_holes()
-
     if flat_cap and len(tri.vertices) > 0:
         z_min, z_max = tri.bounds[:, 2]
         # Trim slightly off top/bottom extreme limits if needed
         margin = (z_max - z_min) * 0.01
         if margin > 0.001:
             try:
-                tri = trimesh.intersections.slice_mesh_plane(tri, plane_normal=[0, 0, -1], plane_origin=[0, 0, z_max - margin])
-                tri = trimesh.intersections.slice_mesh_plane(tri, plane_normal=[0, 0, 1], plane_origin=[0, 0, z_min + margin])
+                tri = trimesh.intersections.slice_mesh_plane(tri, plane_normal=[0, 0, -1], plane_origin=[0, 0, z_max - margin], cap=True)
+                tri = trimesh.intersections.slice_mesh_plane(tri, plane_normal=[0, 0, 1], plane_origin=[0, 0, z_min + margin], cap=True)
             except Exception:
                 pass
+
+    if not tri.is_watertight:
+        tri.fill_holes()
+
+    if tri.volume < 0:
+        tri.faces = tri.faces[:, ::-1]
 
     return tri
 
