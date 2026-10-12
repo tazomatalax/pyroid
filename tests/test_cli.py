@@ -76,6 +76,14 @@ def test_cli_stl_conversion_with_shell(monkeypatch):
         assert exit_code == 0
         assert os.path.exists(out_path)
         assert os.path.getsize(out_path) > 0
+
+        # Verify exported STL has exact bounds and original outer vertices preserved
+        out_mesh = trimesh.load(out_path, force='mesh')
+        assert out_mesh.is_watertight
+        import numpy as np
+        np.testing.assert_allclose(out_mesh.bounds, cube.bounds, atol=1e-3)
+        diffs = np.min(np.linalg.norm(out_mesh.vertices[:, None, :] - cube.vertices[None, :, :], axis=2), axis=0)
+        assert (diffs < 1e-4).all()
     finally:
         for p in [in_path, out_path]:
             if os.path.exists(p):

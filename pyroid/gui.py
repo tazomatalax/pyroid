@@ -204,7 +204,7 @@ class GyroidGeneratorGUI(QMainWindow):
 
         # Flat Capping
         self.stl_cap_check = QCheckBox("Planar slice & cap surfaces for 3D printing")
-        self.stl_cap_check.setChecked(True)
+        self.stl_cap_check.setChecked(False)
         stl_params_layout.addWidget(self.stl_cap_check)
 
         # Preserve Shell

@@ -69,6 +69,12 @@ def test_stl_gyroid_conversion_with_preserved_shell():
         assert isinstance(tri_printable, trimesh.Trimesh)
         assert tri_printable.is_watertight
 
+        # Verify that the original outer boundary geometry was exactly preserved
+        import numpy as np
+        np.testing.assert_allclose(tri_printable.bounds, cube.bounds, atol=1e-3)
+        diffs = np.min(np.linalg.norm(tri_printable.vertices[:, None, :] - cube.vertices[None, :, :], axis=2), axis=0)
+        assert (diffs < 1e-4).all()
+
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)

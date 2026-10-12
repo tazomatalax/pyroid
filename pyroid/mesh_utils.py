@@ -36,17 +36,23 @@ def convert_stl_to_gyroid(stl_mesh: trimesh.Trimesh, params: STLConversionParams
     if max_dim <= 0:
         raise ValueError("Invalid STL mesh with zero extent")
 
-    # Determine voxel resolution per dimension
+    # Determine voxel resolution per dimension with slight bounding box padding
+    # to ensure containment and distance transforms do not clip at the bbox boundary.
     res = params.resolution
-    nx = max(10, int(np.round(res * (extent[0] / max_dim))))
-    ny = max(10, int(np.round(res * (extent[1] / max_dim))))
-    nz = max(10, int(np.round(res * (extent[2] / max_dim))))
+    pad = 2.0 * max_dim / res
+    grid_min = min_b - pad
+    grid_max = max_b + pad
+    grid_extent = grid_max - grid_min
 
-    # Create 3D grid across bounding box
+    nx = max(12, int(np.round(res * (grid_extent[0] / max_dim))))
+    ny = max(12, int(np.round(res * (grid_extent[1] / max_dim))))
+    nz = max(12, int(np.round(res * (grid_extent[2] / max_dim))))
+
+    # Create 3D grid across padded bounding box
     x, y, z = np.mgrid[
-        min_b[0]:max_b[0]:nx * 1j,
-        min_b[1]:max_b[1]:ny * 1j,
-        min_b[2]:max_b[2]:nz * 1j
+        grid_min[0]:grid_max[0]:nx * 1j,
+        grid_min[1]:grid_max[1]:ny * 1j,
+        grid_min[2]:grid_max[2]:nz * 1j
     ]
 
     # Reshape grid points for query
@@ -71,20 +77,87 @@ def convert_stl_to_gyroid(stl_mesh: trimesh.Trimesh, params: STLConversionParams
 
     # Thickness threshold (relative scaling)
     t = np.clip(params.wall_thickness / params.cell_size, 0.05, 1.5)
-    field = np.abs(gyroid_val) - t
 
     # Mask out points outside the STL geometry
     inside_3d = inside_mask.reshape(x.shape)
 
-    # Preserve outer shell if configured
+    # Preserve outer shell if configured:
+    # Instead of voxelizing the outer boundary, we compute the internal gyroid voids
+    # (receded by shell_thickness from the boundary) and subtract them from the exact original STL mesh.
     if params.preserve_shell and params.shell_thickness > 0:
-        dx = extent[0] / max(nx - 1, 1)
-        dy = extent[1] / max(ny - 1, 1)
-        dz = extent[2] / max(nz - 1, 1)
+        dx = grid_extent[0] / max(nx - 1, 1)
+        dy = grid_extent[1] / max(ny - 1, 1)
+        dz = grid_extent[2] / max(nz - 1, 1)
         dist_inside = ndi.distance_transform_edt(inside_3d, sampling=(dx, dy, dz))
-        shell_mask = inside_3d & (dist_inside <= params.shell_thickness)
-        field[shell_mask] = -1.0
 
+        # Void exists only where dist_inside > shell_thickness AND |gyroid_val| > t.
+        field_void = np.maximum(params.shell_thickness - dist_inside, t - np.abs(gyroid_val))
+
+        grid = pv.StructuredGrid(x, y, z)
+        grid["vol"] = field_void.ravel('F')
+        void_mesh = grid.contour([0])
+
+        # If no internal void formed (e.g. wall thickness encompasses the entire volume)
+        if void_mesh.n_points == 0 or void_mesh.n_cells == 0:
+            return pv.wrap(stl_mesh)
+
+        faces = void_mesh.faces.reshape((-1, 4))[:, 1:]
+        tri_void = trimesh.Trimesh(vertices=void_mesh.points, faces=faces)
+        tri_void.process(validate=True)
+        if tri_void.volume < 0:
+            tri_void.faces = tri_void.faces[:, ::-1]
+
+        # Prepare clean STL mesh for boolean subtraction
+        clean_stl = stl_mesh.copy()
+        clean_stl.process(validate=True)
+        if not clean_stl.is_watertight:
+            clean_stl.fill_holes()
+        if clean_stl.volume < 0:
+            clean_stl.faces = clean_stl.faces[:, ::-1]
+
+        # Robust boolean subtraction: outer STL minus internal gyroid void.
+        # This keeps the exact original STL surface triangles, vertices, and CAD dimensions 100% intact!
+        try:
+            import manifold3d
+            m_outer = manifold3d.Manifold(
+                manifold3d.Mesh(
+                    vert_properties=np.asarray(clean_stl.vertices, dtype=np.float32),
+                    tri_verts=np.asarray(clean_stl.faces, dtype=np.uint32)
+                )
+            )
+            m_void = manifold3d.Manifold(
+                manifold3d.Mesh(
+                    vert_properties=np.asarray(tri_void.vertices, dtype=np.float32),
+                    tri_verts=np.asarray(tri_void.faces, dtype=np.uint32)
+                )
+            )
+            diff = m_outer - m_void
+            res_mesh = diff.to_mesh()
+            tri_result = trimesh.Trimesh(
+                vertices=res_mesh.vert_properties,
+                faces=res_mesh.tri_verts,
+                process=False
+            )
+            return pv.wrap(tri_result)
+        except Exception:
+            # Fallback to trimesh boolean difference
+            try:
+                tri_result = clean_stl.difference(tri_void, engine='manifold')
+                return pv.wrap(tri_result)
+            except Exception:
+                pass
+
+        # Fallback to marching cubes with shell if boolean operations fail
+        shell_mask = inside_3d & (dist_inside <= params.shell_thickness)
+        field = np.abs(gyroid_val) - t
+        field[shell_mask] = -1.0
+        field[~inside_3d] = 1.0
+        grid = pv.StructuredGrid(x, y, z)
+        grid["vol"] = field.ravel('F')
+        return grid.contour([0])
+
+    # No shell preservation: gyroid infill throughout the volume
+    field = np.abs(gyroid_val) - t
     field[~inside_3d] = 1.0  # Set outside points high so isosurface doesn't form outside boundary
 
     # Construct PyVista grid and contour isosurface at 0
@@ -95,7 +168,7 @@ def convert_stl_to_gyroid(stl_mesh: trimesh.Trimesh, params: STLConversionParams
     return mesh
 
 
-def prepare_for_printing(mesh: Union[pv.PolyData, trimesh.Trimesh], flat_cap: bool = True) -> trimesh.Trimesh:
+def prepare_for_printing(mesh: Union[pv.PolyData, trimesh.Trimesh], flat_cap: bool = False) -> trimesh.Trimesh:
     """Ensure generated mesh is manifold/watertight for 3D printing."""
     if isinstance(mesh, pv.PolyData):
         faces = mesh.faces.reshape((-1, 4))[:, 1:]

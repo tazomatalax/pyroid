@@ -27,6 +27,8 @@ class GyroidGenerator:
             self.params = GyroidParams()
 
         self.mesh: Optional[pv.PolyData] = None
+        self.is_stl_conversion: bool = False
+        self.preserve_shell: bool = False
 
     def validate_params(self) -> Tuple[bool, str]:
         """Validate parameters using the GyroidParams data model."""
@@ -45,6 +47,9 @@ class GyroidGenerator:
         is_valid, error = self.validate_params()
         if not is_valid:
             raise ValueError(error)
+
+        self.is_stl_conversion = False
+        self.preserve_shell = False
 
         p = self.params
         res = int(p.res)
@@ -101,16 +106,20 @@ class GyroidGenerator:
             raise ValueError(err)
 
         tri_mesh, _ = load_stl(stl_params.stl_path)
+        self.is_stl_conversion = True
+        self.preserve_shell = stl_params.preserve_shell
         self.mesh = convert_stl_to_gyroid(tri_mesh, stl_params)
         return self.mesh
 
-    def save_stl(self, filename: str, prepare_manifold: bool = False) -> None:
+    def save_stl(self, filename: str, prepare_manifold: bool = False, flat_cap: Optional[bool] = None) -> None:
         """Save the generated mesh as an STL file."""
         if self.mesh is None:
             raise ValueError("No mesh has been generated yet")
             
         if prepare_manifold:
-            tri = prepare_for_printing(self.mesh)
+            if flat_cap is None:
+                flat_cap = not (self.is_stl_conversion or self.preserve_shell)
+            tri = prepare_for_printing(self.mesh, flat_cap=flat_cap)
             tri.export(filename)
         else:
             self.mesh.save(filename)

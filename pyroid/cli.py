@@ -26,7 +26,7 @@ def parse_args():
                            help="Input STL file path to convert volume into a gyroid lattice")
     stl_group.add_argument("--cell-size", type=float, default=5.0,
                            help="Gyroid unit cell size (mm or model units) for STL conversion")
-    stl_group.add_argument("--flat-cap", action="store_true", default=True,
+    stl_group.add_argument("--flat-cap", action="store_true", default=False,
                            help="Planar slice and cap surface ends for 3D printing")
     stl_group.add_argument("--preserve-shell", action="store_true", default=False,
                            help="Preserve outer boundary of input STL as a solid shell")
@@ -140,7 +140,8 @@ def main():
         if ext == '.obj':
             generator.save_obj(args.output)
         else:
-            generator.save_stl(args.output, prepare_manifold=args.flat_cap)
+            flat_cap = args.flat_cap if args.input_stl else True
+            generator.save_stl(args.output, prepare_manifold=True, flat_cap=flat_cap)
         print(f"Mesh saved successfully to {args.output}")
 
         # Offscreen render thumbnail if requested
