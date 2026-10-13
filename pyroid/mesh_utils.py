@@ -102,59 +102,37 @@ def convert_stl_to_gyroid(stl_mesh: trimesh.Trimesh, params: STLConversionParams
             return pv.wrap(stl_mesh)
 
         faces = void_mesh.faces.reshape((-1, 4))[:, 1:]
-        tri_void = trimesh.Trimesh(vertices=void_mesh.points, faces=faces)
-        tri_void.process(validate=True)
-        if tri_void.volume < 0:
-            tri_void.faces = tri_void.faces[:, ::-1]
 
         # Prepare clean STL mesh for boolean subtraction
         clean_stl = stl_mesh.copy()
-        clean_stl.process(validate=True)
         if not clean_stl.is_watertight:
             clean_stl.fill_holes()
         if clean_stl.volume < 0:
             clean_stl.faces = clean_stl.faces[:, ::-1]
 
         # Robust boolean subtraction: outer STL minus internal gyroid void.
-        # This keeps the exact original STL surface triangles, vertices, and CAD dimensions 100% intact!
-        try:
-            import manifold3d
-            m_outer = manifold3d.Manifold(
-                manifold3d.Mesh(
-                    vert_properties=np.asarray(clean_stl.vertices, dtype=np.float32),
-                    tri_verts=np.asarray(clean_stl.faces, dtype=np.uint32)
-                )
+        # Keeps original CAD surface triangles intact while skipping redundant Python validation.
+        import manifold3d
+        m_outer = manifold3d.Manifold(
+            manifold3d.Mesh(
+                vert_properties=np.asarray(clean_stl.vertices, dtype=np.float32),
+                tri_verts=np.asarray(clean_stl.faces, dtype=np.uint32)
             )
-            m_void = manifold3d.Manifold(
-                manifold3d.Mesh(
-                    vert_properties=np.asarray(tri_void.vertices, dtype=np.float32),
-                    tri_verts=np.asarray(tri_void.faces, dtype=np.uint32)
-                )
+        )
+        m_void = manifold3d.Manifold(
+            manifold3d.Mesh(
+                vert_properties=np.asarray(void_mesh.points, dtype=np.float32),
+                tri_verts=np.asarray(faces, dtype=np.uint32)
             )
-            diff = m_outer - m_void
-            res_mesh = diff.to_mesh()
-            tri_result = trimesh.Trimesh(
-                vertices=res_mesh.vert_properties,
-                faces=res_mesh.tri_verts,
-                process=False
-            )
-            return pv.wrap(tri_result)
-        except Exception:
-            # Fallback to trimesh boolean difference
-            try:
-                tri_result = clean_stl.difference(tri_void, engine='manifold')
-                return pv.wrap(tri_result)
-            except Exception:
-                pass
-
-        # Fallback to marching cubes with shell if boolean operations fail
-        shell_mask = inside_3d & (dist_inside <= params.shell_thickness)
-        field = np.abs(gyroid_val) - t
-        field[shell_mask] = -1.0
-        field[~inside_3d] = 1.0
-        grid = pv.StructuredGrid(x, y, z)
-        grid["vol"] = field.ravel('F')
-        return grid.contour([0])
+        )
+        diff = m_outer - m_void
+        res_mesh = diff.to_mesh()
+        tri_result = trimesh.Trimesh(
+            vertices=res_mesh.vert_properties,
+            faces=res_mesh.tri_verts,
+            process=False
+        )
+        return pv.wrap(tri_result)
 
     # No shell preservation: gyroid infill throughout the volume
     field = np.abs(gyroid_val) - t

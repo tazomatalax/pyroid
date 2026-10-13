@@ -400,23 +400,27 @@ class GyroidGeneratorGUI(QMainWindow):
 
     def render_current_mesh(self):
         self.plotter.clear()
-        if self.generator is not None and self.generator.mesh is not None and self.generator.mesh.n_points > 0:
-            mesh_to_show = self.generator.mesh
-            if self.cutaway_check.isChecked():
-                try:
-                    mesh_to_show = mesh_to_show.clip(normal='x', origin=mesh_to_show.center)
-                except Exception:
-                    mesh_to_show = self.generator.mesh
+        if self.generator is None or self.generator.mesh is None:
+            return
 
-            if mesh_to_show.n_points > 0:
-                self.plotter.add_mesh(mesh_to_show, scalars=mesh_to_show.points[:, -1], show_scalar_bar=False)
-            self.plotter.add_bounding_box()
-            self.plotter.show_axes()
-            self.plotter.reset_camera()
-            self.update_stats()
-            self.stats_box.setVisible(True)
-        else:
+        if self.generator.mesh.n_points == 0:
             QMessageBox.warning(self, "Empty Mesh", "Generated mesh contains 0 points. Check cell size or wall thickness.")
+            return
+
+        mesh_to_show = self.generator.mesh
+        if self.cutaway_check.isChecked():
+            try:
+                mesh_to_show = mesh_to_show.clip(normal='x', origin=mesh_to_show.center)
+            except Exception:
+                mesh_to_show = self.generator.mesh
+
+        if mesh_to_show.n_points > 0:
+            self.plotter.add_mesh(mesh_to_show, scalars=mesh_to_show.points[:, -1], show_scalar_bar=False)
+        self.plotter.add_bounding_box()
+        self.plotter.show_axes()
+        self.plotter.reset_camera()
+        self.update_stats()
+        self.stats_box.setVisible(True)
 
     def on_generation_finished(self, generator: GyroidGenerator):
         self.generator = generator
@@ -452,18 +456,20 @@ class GyroidGeneratorGUI(QMainWindow):
             if not filename.lower().endswith(f".{file_type}"):
                 filename += f".{file_type}"
             if file_type == "stl":
-                self.generator.save_stl(filename, prepare_manifold=True)
+                is_stl_tab = self.tabs.currentIndex() == 1
+                flat_cap = self.stl_cap_check.isChecked() if is_stl_tab else True
+                self.generator.save_stl(filename, prepare_manifold=True, flat_cap=flat_cap)
             else:
                 self.generator.save_obj(filename)
             self.statusBar.showMessage(f"Saved to {filename}")
 
     def new_project(self):
+        self.generator = None
+        self.stats_box.setVisible(False)
         self.apply_preset("default")
         self.stl_shell_check.setChecked(False)
         self.cutaway_check.setChecked(False)
         self.plotter.clear()
-        self.generator = None
-        self.stats_box.setVisible(False)
         self.statusBar.showMessage("New project started")
 
     def apply_theme(self, theme_name="dark"):
