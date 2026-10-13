@@ -1,14 +1,13 @@
 import sys
 import os
 import json
-from typing import Dict, Any, Optional
+from typing import Optional
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                            QFileDialog, QMessageBox, QComboBox, QGroupBox,
                            QCheckBox, QTabWidget, QStatusBar, QAction,
-                           QMenuBar, QMenu, QProgressBar)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QIcon, QFont
+                           QProgressBar)
+from PyQt5.QtCore import QThread, pyqtSignal, QEvent
 from pyvistaqt import QtInteractor
 import qdarkstyle
 
@@ -79,6 +78,7 @@ class GyroidGeneratorGUI(QMainWindow):
         """Initialize the user interface."""
         self.setWindowTitle("PyRoid - Radially Symmetrical Gyroid Generator & STL Volume Infill")
         self.setGeometry(100, 100, 1280, 750)
+        self.setAcceptDrops(True)
         
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
@@ -271,6 +271,7 @@ class GyroidGeneratorGUI(QMainWindow):
     def create_visualization_panel(self, main_layout):
         """Create 3D visualization panel with PyVistaQt."""
         self.plotter = QtInteractor(self)
+        self.plotter.installEventFilter(self)
         main_layout.addWidget(self.plotter, 2)
 
     def create_menu_bar(self):
@@ -281,6 +282,10 @@ class GyroidGeneratorGUI(QMainWindow):
         new_action = QAction("&New Project", self)
         new_action.triggered.connect(self.new_project)
         file_menu.addAction(new_action)
+
+        open_stl_action = QAction("Open &STL...", self)
+        open_stl_action.triggered.connect(self.on_browse_stl)
+        file_menu.addAction(open_stl_action)
         
         export_stl = QAction("Export as &STL", self)
         export_stl.triggered.connect(lambda: self.save_mesh("stl"))
@@ -327,10 +332,118 @@ class GyroidGeneratorGUI(QMainWindow):
             raw_dict[k] = int(val) if k == 'res' else float(val or 0.0)
         return GyroidParams.from_dict(raw_dict)
 
+    def eventFilter(self, watched, event):
+        """Intercept drag and drop events on child widgets (e.g. 3D plotter viewport)."""
+        if watched == getattr(self, "plotter", None):
+            if event.type() == QEvent.DragEnter:
+                self.dragEnterEvent(event)
+                return True
+            elif event.type() == QEvent.DragMove:
+                self.dragMoveEvent(event)
+                return True
+            elif event.type() == QEvent.Drop:
+                self.dropEvent(event)
+                return True
+        return super().eventFilter(watched, event)
+
+    def dragEnterEvent(self, event):
+        """Accept drag event if it contains supported file types (.stl or .json)."""
+        if self.progressBar.isVisible():
+            event.ignore()
+            return
+
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path and path.lower().endswith(('.stl', '.json')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Accept drag movement over valid drop areas."""
+        if self.progressBar.isVisible():
+            event.ignore()
+            return
+
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path and path.lower().endswith(('.stl', '.json')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        """Handle dropped files (.stl or .json)."""
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            return
+
+        handled = False
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if not file_path or not os.path.isfile(file_path):
+                continue
+
+            lower_path = file_path.lower()
+            if lower_path.endswith('.stl'):
+                self.load_stl_file(file_path)
+                handled = True
+                break
+            elif lower_path.endswith('.json'):
+                self.load_preset_file(file_path)
+                handled = True
+                break
+
+        if handled:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def load_stl_file(self, file_path: str):
+        """Load an STL file, switch to STL conversion tab, and preview in 3D."""
+        if not file_path or not os.path.isfile(file_path):
+            QMessageBox.warning(self, "File Not Found", f"STL file does not exist:\n{file_path}")
+            return
+
+        self.stl_path_edit.setText(file_path)
+        self.tabs.setCurrentIndex(1)
+        self.statusBar.showMessage(f"Loaded STL: {os.path.basename(file_path)}")
+
+        try:
+            import pyvista as pv
+            mesh = pv.read(file_path)
+            if mesh is not None and getattr(mesh, "n_points", 0) > 0:
+                self.plotter.clear()
+                self.plotter.add_mesh(mesh, color="#5dade2", show_edges=True)
+                self.plotter.add_bounding_box()
+                self.plotter.show_axes()
+                self.plotter.reset_camera()
+                self.generator = None
+                self.stats_box.setVisible(False)
+        except Exception:
+            pass
+
+    def load_preset_file(self, file_path: str):
+        """Load parameter preset from a JSON file."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                preset_data = json.load(f)
+            if not isinstance(preset_data, dict):
+                raise ValueError("Preset file must contain a JSON object.")
+            for k, v in preset_data.items():
+                if k in self.params_widgets:
+                    self.params_widgets[k].setText(str(v))
+            self.tabs.setCurrentIndex(0)
+            self.statusBar.showMessage(f"Loaded preset: {os.path.basename(file_path)}")
+        except Exception as e:
+            QMessageBox.warning(self, "Invalid Preset", f"Failed to load preset: {str(e)}")
+
     def on_browse_stl(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Select Input STL File", "", "STL Files (*.stl)")
         if filename:
-            self.stl_path_edit.setText(filename)
+            self.load_stl_file(filename)
 
     def on_generate_clicked(self):
         try:

@@ -3,7 +3,6 @@ import argparse
 import sys
 import os
 import json
-from typing import Dict, Any
 
 from pyroid.core import GyroidGenerator
 from pyroid.models import GyroidParams, STLConversionParams

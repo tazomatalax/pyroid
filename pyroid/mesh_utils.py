@@ -3,7 +3,7 @@ import numpy as np
 import scipy.ndimage as ndi
 import pyvista as pv
 import trimesh
-from typing import Tuple, Optional, Union
+from typing import Tuple, Union
 from pyroid.models import STLConversionParams
 
 
