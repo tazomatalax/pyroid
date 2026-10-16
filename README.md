@@ -51,7 +51,7 @@ uv run pyroid
 ```
 
 - **Tab 1 (Parametric Gyroid)**: Adjust dimensions ($a, b, c$), inner/outer radii, wall thickness, cell scaling, and preset configurations.
-- **Tab 2 (STL to Gyroid Volume)**: Select an external STL file, configure unit cell pitch (mm) and wall thickness, and convert its volume into a gyroid lattice structure.
+- **Tab 2 (STL to Gyroid Volume)**: Select an external STL file, configure unit cell pitch (mm), wall thickness, optional planar capping, and optional shell preservation with configurable shell thickness. Toggle cutaway cross-section view to inspect internal infill.
 
 ### Command Line Interface (CLI)
 
@@ -65,7 +65,12 @@ uv run pyroid-cli --output my_gyroid.stl --preset thick_walls --res 100
 uv run pyroid-cli --input-stl model.stl --output gyroid_model.stl --cell-size 5.0 --wall-thickness 0.5
 ```
 
-#### 3. Offscreen Thumbnail Rendering & Stats
+#### 3. Convert STL Preserving Solid Outer Shell
+```bash
+uv run pyroid-cli --input-stl model.stl --output gyroid_shelled.stl --cell-size 5.0 --wall-thickness 0.5 --preserve-shell --shell-thickness 1.5
+```
+
+#### 4. Offscreen Thumbnail Rendering & Stats
 ```bash
 uv run pyroid-cli --input-stl input.stl --output out.stl --render screenshot.png --print-stats
 ```

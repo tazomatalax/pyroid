@@ -1,14 +1,13 @@
 import sys
 import os
 import json
-from typing import Dict, Any, Optional
+from typing import Optional
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                            QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                            QFileDialog, QMessageBox, QComboBox, QGroupBox,
                            QCheckBox, QTabWidget, QStatusBar, QAction,
-                           QMenuBar, QMenu, QProgressBar)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QIcon, QFont
+                           QProgressBar)
+from PyQt5.QtCore import QThread, pyqtSignal, QEvent
 from pyvistaqt import QtInteractor
 import qdarkstyle
 
@@ -70,6 +69,7 @@ class GyroidGeneratorGUI(QMainWindow):
         self.generator: Optional[GyroidGenerator] = None
         self.config_file = os.path.join(os.path.expanduser("~"), ".pyroid_config.json")
         self.current_preset = "default"
+        self.current_mesh_source: Optional[str] = None
         
         self.init_ui()
         self.load_config()
@@ -79,6 +79,7 @@ class GyroidGeneratorGUI(QMainWindow):
         """Initialize the user interface."""
         self.setWindowTitle("PyRoid - Radially Symmetrical Gyroid Generator & STL Volume Infill")
         self.setGeometry(100, 100, 1280, 750)
+        self.setAcceptDrops(True)
         
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
@@ -204,8 +205,23 @@ class GyroidGeneratorGUI(QMainWindow):
 
         # Flat Capping
         self.stl_cap_check = QCheckBox("Planar slice & cap surfaces for 3D printing")
-        self.stl_cap_check.setChecked(True)
+        self.stl_cap_check.setChecked(False)
         stl_params_layout.addWidget(self.stl_cap_check)
+
+        # Preserve Shell
+        self.stl_shell_check = QCheckBox("Preserve original STL outer shell")
+        self.stl_shell_check.setChecked(False)
+        self.stl_shell_check.toggled.connect(self.on_shell_check_toggled)
+        stl_params_layout.addWidget(self.stl_shell_check)
+
+        shell_thick_row = QHBoxLayout()
+        self.stl_shell_label = QLabel("Shell Thickness (mm):")
+        self.stl_shell_edit = QLineEdit("1.0")
+        self.stl_shell_label.setEnabled(False)
+        self.stl_shell_edit.setEnabled(False)
+        shell_thick_row.addWidget(self.stl_shell_label)
+        shell_thick_row.addWidget(self.stl_shell_edit)
+        stl_params_layout.addLayout(shell_thick_row)
 
         stl_tab_layout.addWidget(stl_params_box)
         
@@ -229,6 +245,15 @@ class GyroidGeneratorGUI(QMainWindow):
         actions_layout.addWidget(self.save_stl_btn)
         actions_layout.addWidget(self.save_obj_btn)
         left_layout.addWidget(actions_box)
+
+        # View Options Section
+        view_box = QGroupBox("View Options")
+        view_layout = QVBoxLayout(view_box)
+        self.cutaway_check = QCheckBox("Show Cross-Section (Cutaway)")
+        self.cutaway_check.setToolTip("Slice mesh along X-axis to inspect internal gyroid infill")
+        self.cutaway_check.toggled.connect(self.on_view_mode_changed)
+        view_layout.addWidget(self.cutaway_check)
+        left_layout.addWidget(view_box)
         
         # Stats section
         self.stats_box = QGroupBox("Mesh Statistics")
@@ -247,6 +272,7 @@ class GyroidGeneratorGUI(QMainWindow):
     def create_visualization_panel(self, main_layout):
         """Create 3D visualization panel with PyVistaQt."""
         self.plotter = QtInteractor(self)
+        self.plotter.installEventFilter(self)
         main_layout.addWidget(self.plotter, 2)
 
     def create_menu_bar(self):
@@ -257,6 +283,10 @@ class GyroidGeneratorGUI(QMainWindow):
         new_action = QAction("&New Project", self)
         new_action.triggered.connect(self.new_project)
         file_menu.addAction(new_action)
+
+        open_stl_action = QAction("Open &STL...", self)
+        open_stl_action.triggered.connect(self.on_browse_stl)
+        file_menu.addAction(open_stl_action)
         
         export_stl = QAction("Export as &STL", self)
         export_stl.triggered.connect(lambda: self.save_mesh("stl"))
@@ -303,10 +333,118 @@ class GyroidGeneratorGUI(QMainWindow):
             raw_dict[k] = int(val) if k == 'res' else float(val or 0.0)
         return GyroidParams.from_dict(raw_dict)
 
+    def eventFilter(self, watched, event):
+        """Intercept drag and drop events on child widgets (e.g. 3D plotter viewport)."""
+        if watched == getattr(self, "plotter", None):
+            if event.type() == QEvent.DragEnter:
+                self.dragEnterEvent(event)
+                return True
+            elif event.type() == QEvent.DragMove:
+                self.dragMoveEvent(event)
+                return True
+            elif event.type() == QEvent.Drop:
+                self.dropEvent(event)
+                return True
+        return super().eventFilter(watched, event)
+
+    def dragEnterEvent(self, event):
+        """Accept drag event if it contains supported file types (.stl or .json)."""
+        if self.progressBar.isVisible():
+            event.ignore()
+            return
+
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path and path.lower().endswith(('.stl', '.json')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dragMoveEvent(self, event):
+        """Accept drag movement over valid drop areas."""
+        if self.progressBar.isVisible():
+            event.ignore()
+            return
+
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                path = url.toLocalFile()
+                if path and path.lower().endswith(('.stl', '.json')):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        """Handle dropped files (.stl or .json)."""
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            return
+
+        handled = False
+        for url in event.mimeData().urls():
+            file_path = url.toLocalFile()
+            if not file_path or not os.path.isfile(file_path):
+                continue
+
+            lower_path = file_path.lower()
+            if lower_path.endswith('.stl'):
+                self.load_stl_file(file_path)
+                handled = True
+                break
+            elif lower_path.endswith('.json'):
+                self.load_preset_file(file_path)
+                handled = True
+                break
+
+        if handled:
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def load_stl_file(self, file_path: str):
+        """Load an STL file, switch to STL conversion tab, and preview in 3D."""
+        if not file_path or not os.path.isfile(file_path):
+            QMessageBox.warning(self, "File Not Found", f"STL file does not exist:\n{file_path}")
+            return
+
+        self.stl_path_edit.setText(file_path)
+        self.tabs.setCurrentIndex(1)
+        self.statusBar.showMessage(f"Loaded STL: {os.path.basename(file_path)}")
+
+        try:
+            import pyvista as pv
+            mesh = pv.read(file_path)
+            if mesh is not None and getattr(mesh, "n_points", 0) > 0:
+                self.plotter.clear()
+                self.plotter.add_mesh(mesh, color="#5dade2", show_edges=True)
+                self.plotter.add_bounding_box()
+                self.plotter.show_axes()
+                self.plotter.reset_camera()
+                self.generator = None
+                self.stats_box.setVisible(False)
+        except Exception:
+            pass
+
+    def load_preset_file(self, file_path: str):
+        """Load parameter preset from a JSON file."""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                preset_data = json.load(f)
+            if not isinstance(preset_data, dict):
+                raise ValueError("Preset file must contain a JSON object.")
+            for k, v in preset_data.items():
+                if k in self.params_widgets:
+                    self.params_widgets[k].setText(str(v))
+            self.tabs.setCurrentIndex(0)
+            self.statusBar.showMessage(f"Loaded preset: {os.path.basename(file_path)}")
+        except Exception as e:
+            QMessageBox.warning(self, "Invalid Preset", f"Failed to load preset: {str(e)}")
+
     def on_browse_stl(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Select Input STL File", "", "STL Files (*.stl)")
         if filename:
-            self.stl_path_edit.setText(filename)
+            self.load_stl_file(filename)
 
     def on_generate_clicked(self):
         try:
@@ -320,6 +458,7 @@ class GyroidGeneratorGUI(QMainWindow):
             self.statusBar.showMessage("Generating parametric gyroid...")
             self.progressBar.setVisible(True)
             self.progressBar.setValue(10)
+            self.current_mesh_source = "parametric"
             
             self.worker = ParametricWorker(params)
             self.worker.finished.connect(self.on_generation_finished)
@@ -341,18 +480,23 @@ class GyroidGeneratorGUI(QMainWindow):
             cell_size = float(self.stl_cell_edit.text())
             wall_thick = float(self.stl_wall_edit.text())
             flat_cap = self.stl_cap_check.isChecked()
+            preserve_shell = self.stl_shell_check.isChecked()
+            shell_thick = float(self.stl_shell_edit.text()) if preserve_shell else 1.0
 
             stl_params = STLConversionParams(
                 stl_path=stl_path,
                 resolution=res,
                 cell_size=cell_size,
                 wall_thickness=wall_thick,
-                flat_cap=flat_cap
+                flat_cap=flat_cap,
+                preserve_shell=preserve_shell,
+                shell_thickness=shell_thick
             )
             
             self.convert_stl_btn.setEnabled(False)
             self.statusBar.showMessage("Converting STL volume to Gyroid lattice...")
             self.progressBar.setVisible(True)
+            self.current_mesh_source = "stl"
             
             self.stl_worker = STLConversionWorker(stl_params)
             self.stl_worker.finished.connect(self.on_generation_finished)
@@ -362,23 +506,45 @@ class GyroidGeneratorGUI(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Invalid parameters: {str(e)}")
 
+    def on_shell_check_toggled(self, checked: bool):
+        self.stl_shell_label.setEnabled(checked)
+        self.stl_shell_edit.setEnabled(checked)
+
+    def on_view_mode_changed(self):
+        if self.generator and self.generator.mesh:
+            self.render_current_mesh()
+
+    def render_current_mesh(self):
+        self.plotter.clear()
+        if self.generator is None or self.generator.mesh is None:
+            return
+
+        if self.generator.mesh.n_points == 0:
+            QMessageBox.warning(self, "Empty Mesh", "Generated mesh contains 0 points. Check cell size or wall thickness.")
+            return
+
+        mesh_to_show = self.generator.mesh
+        if self.cutaway_check.isChecked():
+            try:
+                mesh_to_show = mesh_to_show.clip(normal='x', origin=mesh_to_show.center)
+            except Exception:
+                mesh_to_show = self.generator.mesh
+
+        if mesh_to_show.n_points > 0:
+            self.plotter.add_mesh(mesh_to_show, scalars=mesh_to_show.points[:, -1], show_scalar_bar=False)
+        self.plotter.add_bounding_box()
+        self.plotter.show_axes()
+        self.plotter.reset_camera()
+        self.update_stats()
+        self.stats_box.setVisible(True)
+
     def on_generation_finished(self, generator: GyroidGenerator):
         self.generator = generator
         self.statusBar.showMessage("Mesh generated successfully!")
         self.generate_btn.setEnabled(True)
         self.convert_stl_btn.setEnabled(True)
         self.progressBar.setVisible(False)
-        
-        self.plotter.clear()
-        if generator.mesh is not None and generator.mesh.n_points > 0:
-            self.plotter.add_mesh(generator.mesh, scalars=generator.mesh.points[:, -1], show_scalar_bar=False)
-            self.plotter.add_bounding_box()
-            self.plotter.show_axes()
-            self.plotter.reset_camera()
-            self.update_stats()
-            self.stats_box.setVisible(True)
-        else:
-            QMessageBox.warning(self, "Empty Mesh", "Generated mesh contains 0 points. Check cell size or wall thickness.")
+        self.render_current_mesh()
 
     def on_generation_error(self, error_msg):
         QMessageBox.critical(self, "Generation Failed", error_msg)
@@ -406,16 +572,21 @@ class GyroidGeneratorGUI(QMainWindow):
             if not filename.lower().endswith(f".{file_type}"):
                 filename += f".{file_type}"
             if file_type == "stl":
-                self.generator.save_stl(filename, prepare_manifold=True)
+                is_stl = (self.current_mesh_source == "stl") or (self.current_mesh_source is None and self.tabs.currentIndex() == 1)
+                flat_cap = self.stl_cap_check.isChecked() if is_stl else True
+                self.generator.save_stl(filename, prepare_manifold=True, flat_cap=flat_cap)
             else:
                 self.generator.save_obj(filename)
             self.statusBar.showMessage(f"Saved to {filename}")
 
     def new_project(self):
-        self.apply_preset("default")
-        self.plotter.clear()
         self.generator = None
+        self.current_mesh_source = None
         self.stats_box.setVisible(False)
+        self.apply_preset("default")
+        self.stl_shell_check.setChecked(False)
+        self.cutaway_check.setChecked(False)
+        self.plotter.clear()
         self.statusBar.showMessage("New project started")
 
     def apply_theme(self, theme_name="dark"):

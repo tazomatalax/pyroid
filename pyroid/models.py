@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple
 
 
 @dataclass
@@ -49,7 +49,9 @@ class STLConversionParams:
     resolution: int = field(default=80, metadata={"help": "Voxel grid resolution along max dimension"})
     cell_size: float = field(default=5.0, metadata={"help": "Gyroid unit cell size (mm or model units)"})
     wall_thickness: float = field(default=0.5, metadata={"help": "Thickness of the gyroid lattice walls"})
-    flat_cap: bool = field(default=True, metadata={"help": "Trim and cap top/bottom surfaces for 3D printing"})
+    flat_cap: bool = field(default=False, metadata={"help": "Trim and cap top/bottom surfaces for 3D printing"})
+    preserve_shell: bool = field(default=False, metadata={"help": "Preserve original STL boundary as a solid shell"})
+    shell_thickness: float = field(default=1.0, metadata={"help": "Thickness of the preserved shell (in model units/mm)"})
 
     def validate(self) -> Tuple[bool, str]:
         if not self.stl_path:
@@ -60,4 +62,6 @@ class STLConversionParams:
             return False, "Cell size must be positive"
         if self.wall_thickness <= 0:
             return False, "Wall thickness must be positive"
+        if self.preserve_shell and self.shell_thickness <= 0:
+            return False, "Shell thickness must be positive when shell preservation is enabled"
         return True, ""

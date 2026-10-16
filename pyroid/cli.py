@@ -3,7 +3,6 @@ import argparse
 import sys
 import os
 import json
-from typing import Dict, Any
 
 from pyroid.core import GyroidGenerator
 from pyroid.models import GyroidParams, STLConversionParams
@@ -26,8 +25,12 @@ def parse_args():
                            help="Input STL file path to convert volume into a gyroid lattice")
     stl_group.add_argument("--cell-size", type=float, default=5.0,
                            help="Gyroid unit cell size (mm or model units) for STL conversion")
-    stl_group.add_argument("--flat-cap", action="store_true", default=True,
+    stl_group.add_argument("--flat-cap", action="store_true", default=False,
                            help="Planar slice and cap surface ends for 3D printing")
+    stl_group.add_argument("--preserve-shell", action="store_true", default=False,
+                           help="Preserve outer boundary of input STL as a solid shell")
+    stl_group.add_argument("--shell-thickness", type=float, default=1.0,
+                           help="Outer shell thickness (mm or model units) when --preserve-shell is enabled")
 
     # Parametric Gyroid Group
     param_group = parser.add_argument_group("Parametric Gyroid Parameters")
@@ -85,7 +88,9 @@ def main():
                 resolution=args.res,
                 cell_size=args.cell_size,
                 wall_thickness=args.wall_thickness,
-                flat_cap=args.flat_cap
+                flat_cap=args.flat_cap,
+                preserve_shell=args.preserve_shell,
+                shell_thickness=args.shell_thickness
             )
             print("Converting STL volume to Gyroid lattice...")
             generator.convert_from_stl(stl_params)
@@ -134,7 +139,8 @@ def main():
         if ext == '.obj':
             generator.save_obj(args.output)
         else:
-            generator.save_stl(args.output, prepare_manifold=args.flat_cap)
+            flat_cap = args.flat_cap if args.input_stl else True
+            generator.save_stl(args.output, prepare_manifold=True, flat_cap=flat_cap)
         print(f"Mesh saved successfully to {args.output}")
 
         # Offscreen render thumbnail if requested

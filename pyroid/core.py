@@ -104,13 +104,13 @@ class GyroidGenerator:
         self.mesh = convert_stl_to_gyroid(tri_mesh, stl_params)
         return self.mesh
 
-    def save_stl(self, filename: str, prepare_manifold: bool = False) -> None:
+    def save_stl(self, filename: str, prepare_manifold: bool = False, flat_cap: bool = False) -> None:
         """Save the generated mesh as an STL file."""
         if self.mesh is None:
             raise ValueError("No mesh has been generated yet")
             
         if prepare_manifold:
-            tri = prepare_for_printing(self.mesh)
+            tri = prepare_for_printing(self.mesh, flat_cap=flat_cap)
             tri.export(filename)
         else:
             self.mesh.save(filename)
