@@ -33,6 +33,7 @@ dependencies = [
     "PyQt5>=5.15.0,<5.15.11",
     "pyvistaqt>=0.11.0",
     "QDarkStyle>=3.0.0",
+    "manifold3d>=3.0.0",
     "scipy>=1.7.0",
 ]
 

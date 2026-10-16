@@ -69,6 +69,7 @@ class GyroidGeneratorGUI(QMainWindow):
         self.generator: Optional[GyroidGenerator] = None
         self.config_file = os.path.join(os.path.expanduser("~"), ".pyroid_config.json")
         self.current_preset = "default"
+        self.current_mesh_source: Optional[str] = None
         
         self.init_ui()
         self.load_config()
@@ -457,6 +458,7 @@ class GyroidGeneratorGUI(QMainWindow):
             self.statusBar.showMessage("Generating parametric gyroid...")
             self.progressBar.setVisible(True)
             self.progressBar.setValue(10)
+            self.current_mesh_source = "parametric"
             
             self.worker = ParametricWorker(params)
             self.worker.finished.connect(self.on_generation_finished)
@@ -494,6 +496,7 @@ class GyroidGeneratorGUI(QMainWindow):
             self.convert_stl_btn.setEnabled(False)
             self.statusBar.showMessage("Converting STL volume to Gyroid lattice...")
             self.progressBar.setVisible(True)
+            self.current_mesh_source = "stl"
             
             self.stl_worker = STLConversionWorker(stl_params)
             self.stl_worker.finished.connect(self.on_generation_finished)
@@ -569,8 +572,8 @@ class GyroidGeneratorGUI(QMainWindow):
             if not filename.lower().endswith(f".{file_type}"):
                 filename += f".{file_type}"
             if file_type == "stl":
-                is_stl_tab = self.tabs.currentIndex() == 1
-                flat_cap = self.stl_cap_check.isChecked() if is_stl_tab else True
+                is_stl = (self.current_mesh_source == "stl") or (self.current_mesh_source is None and self.tabs.currentIndex() == 1)
+                flat_cap = self.stl_cap_check.isChecked() if is_stl else True
                 self.generator.save_stl(filename, prepare_manifold=True, flat_cap=flat_cap)
             else:
                 self.generator.save_obj(filename)
@@ -578,6 +581,7 @@ class GyroidGeneratorGUI(QMainWindow):
 
     def new_project(self):
         self.generator = None
+        self.current_mesh_source = None
         self.stats_box.setVisible(False)
         self.apply_preset("default")
         self.stl_shell_check.setChecked(False)

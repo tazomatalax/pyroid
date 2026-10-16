@@ -14,7 +14,7 @@ PyRoid is a Python package, CLI tool, and Qt graphical interface for generating,
 ## Technical Standards & Package Management
 - Language: Python >= 3.8
 - Package Manager: `uv` (fast Python environment & package manager)
-- Dependencies: `numpy`, `pyvista`, `trimesh`, `scipy`, `PyQt5`, `pyvistaqt`, `QDarkStyle`
+- Dependencies: `numpy`, `pyvista`, `trimesh`, `manifold3d`, `scipy`, `PyQt5`, `pyvistaqt`, `QDarkStyle`
 - Build System: PEP 621 via `pyproject.toml` with `uv.lock`
 - Code Style: PEP 8, strict type hints, explicit dataclasses.
 

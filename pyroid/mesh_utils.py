@@ -126,7 +126,17 @@ def convert_stl_to_gyroid(stl_mesh: trimesh.Trimesh, params: STLConversionParams
             )
         )
         diff = m_outer - m_void
+        if diff.status() != manifold3d.Error.NoError:
+            raise ValueError(
+                "Failed to preserve outer shell: input STL is not a closed manifold mesh. "
+                "Please repair the STL or disable shell preservation."
+            )
         res_mesh = diff.to_mesh()
+        if len(res_mesh.vert_properties) == 0:
+            raise ValueError(
+                "Boolean difference between input STL and gyroid cavity resulted in an empty mesh. "
+                "Check model geometry, cell size, and shell thickness."
+            )
         tri_result = trimesh.Trimesh(
             vertices=res_mesh.vert_properties,
             faces=res_mesh.tri_verts,
